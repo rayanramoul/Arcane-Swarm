@@ -5,17 +5,20 @@ from absl import app
 from pysc2.lib import actions, features, units
 import random
 
-import numpy
-numpy.set_printoptions(threshold=numpy.nan)
+import numpy as np
+
+np.set_printoptions(threshold=np.nan)
 class ArcaneSwarm(base_agent.BaseAgent):
     def __init__(self):
         super(ArcaneSwarm, self).__init__()
         self.spawningpool=False
         self.attack_coordinates = None
         self.attacked = False
-
+        self.moved=False
     def step(self, obs):
         super(ArcaneSwarm, self).step(obs)
+        x=50
+        y=50
         if obs.first():
             player_y, player_x = (obs.observation.feature_minimap.player_relative ==
                                   features.PlayerRelative.SELF).nonzero()
@@ -27,11 +30,16 @@ class ArcaneSwarm(base_agent.BaseAgent):
 
             else:
                 self.attack_coordinates = (12, 16)
-        try:
-            creep_x, creep_y = numpy.where(obs.observation.feature_screen.creep==1)
-        except:
-            pass    
-            
+        spawning_pools = self.get_units_by_type(obs, units.Zerg.SpawningPool)
+        self.creep_y, self.creep_x = np.where(obs.observation.feature_minimap.creep==1)
+        
+        if len(spawning_pools)!=0:
+            print("done")            
+            self.spawningpool=True
+
+        if self.moved and not self.spawningpool:
+            self.moved=False
+            return actions.FUNCTIONS.Build_SpawningPool_screen ("now", (42,42)) 
         
         free_supply = (obs.observation.player.food_cap -
                        obs.observation.player.food_used)
@@ -42,11 +50,12 @@ class ArcaneSwarm(base_agent.BaseAgent):
         if self.unit_type_is_selected(obs, units.Zerg.Drone) and not self.spawningpool:
             if (actions.FUNCTIONS.Build_SpawningPool_screen.id in 
 obs.observation.available_actions):
-                print("trying build")
-                x = random.choice(creep_x)
-                y = random.choice(creep_y)
-                self.spawningpool=True
-                return actions.FUNCTIONS.Build_SpawningPool_screen("now", (x,y))
+                
+                x = random.choice(self.creep_x)
+                y = random.choice(self.creep_y)
+                self.moved=True
+                return actions.FUNCTIONS.move_camera((x,y))
+                
         drones = self.get_units_by_type(obs, units.Zerg.Drone)
         if len(drones)>0 and not self.spawningpool:
             drone = random.choice(drones)
@@ -54,6 +63,7 @@ obs.observation.available_actions):
         larvae = self.get_units_by_type(obs, units.Zerg.Larva)
         if self.unit_type_is_selected(obs, units.Zerg.Larva):
             if self.can_do(obs, actions.FUNCTIONS.Train_Zergling_quick.id):
+                self.spawningpool=True
                 return actions.FUNCTIONS.Train_Zergling_quick("now")
         if len(larvae) > 0:
             larva = random.choice(larvae)
@@ -98,7 +108,7 @@ def main(unused_argv):
                 players=[sc2_env.Agent(sc2_env.Race.zerg), sc2_env.Bot(sc2_env.Race.random,
             sc2_env.Difficulty.very_easy)],
             agent_interface_format=features.AgentInterfaceFormat(
-feature_dimensions=features.Dimensions(screen=84, minimap=64),use_feature_units=True), # Size of screen and minimap that the agent see
+feature_dimensions=features.Dimensions(screen=84, minimap=84),use_feature_units=True), # Size of screen and minimap that the agent see
 
             visualize=True
             ) as env:
